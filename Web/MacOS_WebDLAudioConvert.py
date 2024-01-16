@@ -8,6 +8,7 @@ import threading
 def download_and_convert():
     url = url_entry.get()
     format_choice = format_var.get()
+    delete_original = delete_var.get()
     downloads_path = os.path.join(os.path.expanduser('~'), 'Downloads')
 
     if not url:
@@ -49,9 +50,9 @@ def download_and_convert():
 
                     subprocess.run(convert_command, shell=True, check=True)
 
-                    # Remove the original video file
-                    os.remove(input_file)
-                    break
+                    # Remove the original video file if checkbox is checked
+                    if delete_original:
+                        os.remove(input_file)
 
             messagebox.showinfo("Success", f"Video downloaded and converted to {format_choice.upper()} successfully!")
 
@@ -60,10 +61,9 @@ def download_and_convert():
 
     threading.Thread(target=run_download).start()
 
-
 # Set up the Tkinter window
 window = tk.Tk()
-window.title("Video Downloader and Converter")
+window.title("SammyJ's WebVid Downloader and Converter")
 
 # URL entry
 url_label = ttk.Label(window, text="Video URL:")
@@ -78,6 +78,11 @@ format_var = tk.StringVar()
 format_dropdown = ttk.Combobox(window, textvariable=format_var, state="readonly")
 format_dropdown['values'] = ('wav', 'flac')
 format_dropdown.pack()
+
+# Checkbox for deleting the original video
+delete_var = tk.BooleanVar(value=True)  # Checkbox is checked by default
+delete_checkbox = ttk.Checkbutton(window, text="Delete original video after conversion", variable=delete_var)
+delete_checkbox.pack()
 
 # Download button
 download_button = ttk.Button(window, text="Download and Convert", command=download_and_convert)
