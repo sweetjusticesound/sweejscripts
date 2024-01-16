@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
 import subprocess
+import threading
 
 def download_and_convert():
     url = url_entry.get()
@@ -13,35 +14,51 @@ def download_and_convert():
         messagebox.showerror("Error", "Please enter a video URL")
         return
 
-    try:
-        # Download video using yt-dlp
-        download_command = f'yt-dlp -o "{downloads_path}/%(title)s.%(ext)s" {url}'
-        subprocess.run(download_command, shell=True, check=True)
+    def run_download():
+        try:
+            download_command = f'yt-dlp -o "{downloads_path}/%(title)s.%(ext)s" {url}'
+            process = subprocess.Popen(download_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
-        # Find downloaded file (assuming mp4 or webm format)
-        for file in os.listdir(downloads_path):
-            if file.endswith(('.mp4', '.webm')):
-                input_file = os.path.join(downloads_path, file)
-                output_file = os.path.splitext(input_file)[0] + f'.{format_choice}'
+            while True:
+                output = process.stdout.readline()
+                if output == '' and process.poll() is not None:
+                    break
+                if output:
+                    print(output.strip())  # or update this to reflect in the GUI
 
-                # Convert to WAV 48kHz 24-bit if selected
-                if format_choice == 'wav':
-                    convert_command = f'ffmpeg -i "{input_file}" -ar 48000 -acodec pcm_s24le "{output_file}"'
+            # Post-download processing
+            convert_downloaded_video()
 
-                # Convert to highest quality FLAC if selected
-                elif format_choice == 'flac':
-                    convert_command = f'ffmpeg -i "{input_file}" -q:a 0 "{output_file}"'
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
 
-                subprocess.run(convert_command, shell=True, check=True)
+    def convert_downloaded_video():
+        try:
+            for file in os.listdir(downloads_path):
+                if file.endswith(('.mp4', '.webm')):
+                    input_file = os.path.join(downloads_path, file)
+                    output_file = os.path.splitext(input_file)[0] + f'.{format_choice}'
 
-                # Remove the original video file
-                os.remove(input_file)
-                break
+                    # Convert to WAV 48kHz 24-bit if selected
+                    if format_choice == 'wav':
+                        convert_command = f'ffmpeg -i "{input_file}" -ar 48000 -acodec pcm_s24le "{output_file}"'
 
-        messagebox.showinfo("Success", f"Video downloaded and converted to {format_choice.upper()} successfully!")
+                    # Convert to highest quality FLAC if selected
+                    elif format_choice == 'flac':
+                        convert_command = f'ffmpeg -i "{input_file}" -q:a 0 "{output_file}"'
 
-    except Exception as e:
-        messagebox.showerror("Error", str(e))
+                    subprocess.run(convert_command, shell=True, check=True)
+
+                    # Remove the original video file
+                    os.remove(input_file)
+                    break
+
+            messagebox.showinfo("Success", f"Video downloaded and converted to {format_choice.upper()} successfully!")
+
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+    threading.Thread(target=run_download).start()
 
 
 # Set up the Tkinter window
