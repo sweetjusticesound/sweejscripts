@@ -3,7 +3,6 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
 import subprocess
-import sys
 
 def download_and_convert():
     url = url_entry.get()
@@ -25,8 +24,14 @@ def download_and_convert():
                 input_file = os.path.join(downloads_path, file)
                 output_file = os.path.splitext(input_file)[0] + f'.{format_choice}'
 
-                # Convert to selected format using FFmpeg
-                convert_command = f'ffmpeg -i "{input_file}" "{output_file}"'
+                # Convert to WAV 48kHz 24-bit if selected
+                if format_choice == 'wav':
+                    convert_command = f'ffmpeg -i "{input_file}" -ar 48000 -acodec pcm_s24le "{output_file}"'
+
+                # Convert to highest quality FLAC if selected
+                elif format_choice == 'flac':
+                    convert_command = f'ffmpeg -i "{input_file}" -q:a 0 "{output_file}"'
+
                 subprocess.run(convert_command, shell=True, check=True)
 
                 # Remove the original video file
@@ -38,6 +43,7 @@ def download_and_convert():
     except Exception as e:
         messagebox.showerror("Error", str(e))
 
+
 # Set up the Tkinter window
 window = tk.Tk()
 window.title("Video Downloader and Converter")
@@ -46,10 +52,9 @@ window.title("Video Downloader and Converter")
 url_label = ttk.Label(window, text="Video URL:")
 url_label.pack()
 url_entry = ttk.Entry(window, width=50)
-url_entry
-.pack()
+url_entry.pack()
 
-Format dropdown
+# Format dropdown
 format_label = ttk.Label(window, text="Select File Format:")
 format_label.pack()
 format_var = tk.StringVar()
@@ -57,9 +62,9 @@ format_dropdown = ttk.Combobox(window, textvariable=format_var, state="readonly"
 format_dropdown['values'] = ('wav', 'flac')
 format_dropdown.pack()
 
-Download button
+# Download button
 download_button = ttk.Button(window, text="Download and Convert", command=download_and_convert)
 download_button.pack()
 
-Run the Tkinter loop
+# Run the Tkinter loop
 window.mainloop()
