@@ -19,7 +19,8 @@ def update_progress(message):
 
 def run_hls_conversion():
     source = source_entry.get()
-    output = output_entry.get()
+    output_dir = output_entry.get()
+    output_filename = output_filename_entry.get()
     min_br = min_bitrate_entry.get()
     max_br = max_bitrate_entry.get()
     step_br = step_bitrate_entry.get()
@@ -29,21 +30,25 @@ def run_hls_conversion():
         max_br_int = int(max_br)
         step_br_int = int(step_br)
 
-        # Ensure the bitrate values are valid
-        if min_br_int < 10000 or max_br_int > 40000 or step_br_int <= 0:
-            raise ValueError("Invalid bitrate values.")
+        # Ensure the bitrate values and output filename are valid
+        if min_br_int < 10000 or max_br_int > 40000 or step_br_int <= 0 or not output_filename:
+            raise ValueError("Invalid input values.")
+
+        playlist_path = f"{output_dir}/{output_filename}_hls.m3u8"
+        open(playlist_path, 'w').close()  # Create/clear the playlist file
 
         for br in range(min_br_int, max_br_int + 1, step_br_int):
             bitrate = f"{br}k"
+            transcoded_file = f"{output_dir}/{output_filename}_{bitrate}.mp4"
             update_progress(f"Transcoding at bitrate: {bitrate}")
-            subprocess.run(["ffmpeg", "-i", source, "-c:v", "hevc", "-b:v", bitrate, "-c:a", "copy", f"{output}/output_{bitrate}.mp4"])
+            subprocess.run(["ffmpeg", "-i", source, "-c:v", "hevc", "-b:v", bitrate, "-c:a", "copy", transcoded_file])
             
             update_progress(f"Segmenting: {bitrate}")
-            subprocess.run(["mediafilesegmenter", "-i", f"{output}/output_{bitrate}.mp4", "-B", f"seg_{bitrate}", "-f", f"{output}/variant_{bitrate}"])
+            subprocess.run(["mediafilesegmenter", "-i", transcoded_file, "-B", f"seg_{bitrate}", "-f", f"{output_dir}/{output_filename}_{bitrate}"])
 
-            with open(f"{output}/playlist.m3u8", "a") as playlist:
+            with open(playlist_path, "a") as playlist:
                 playlist.write(f"#EXT-X-STREAM-INF:BANDWIDTH={br}\n")
-                playlist.write(f"variant_{bitrate}/prog_index.m3u8\n")
+                playlist.write(f"{output_filename}_{bitrate}/prog_index.m3u8\n")
 
         update_progress("HLS conversion completed.")
     except ValueError as e:
@@ -66,6 +71,10 @@ tk.Label(app, text="Output Directory:").pack()
 output_entry = tk.Entry(app, width=50)
 output_entry.pack()
 tk.Button(app, text="Browse", command=open_directory_dialog).pack()
+
+tk.Label(app, text="Output Filename:").pack()
+output_filename_entry = tk.Entry(app, width=50)
+output_filename_entry.pack()
 
 tk.Label(app, text="Minimum Bitrate (kbps):").pack()
 min_bitrate_entry = tk.Entry(app)
