@@ -31,7 +31,6 @@ def convert_videos():
         max_br_int = int(max_br)
         step_br_int = int(step_br)
 
-        # Ensure the bitrate values and output filename are valid
         if min_br_int < 10000 or max_br_int > 40000 or step_br_int <= 0 or not output_filename:
             raise ValueError("Invalid input values.")
 
@@ -39,7 +38,11 @@ def convert_videos():
             bitrate = f"{br}k"
             transcoded_file = f"{output_dir}/{output_filename}_{bitrate}.mp4"
             update_progress(f"Transcoding at bitrate: {bitrate}")
-            subprocess.run(["ffmpeg", "-i", source, "-c:v", "hevc", "-b:v", bitrate, "-c:a", "copy", transcoded_file])
+
+            # Halve resolution for bitrates under 15 Mbps
+            scale_cmd = "-vf scale=iw/2:ih/2" if br < 15000 else ""
+
+            subprocess.run(["ffmpeg", "-i", source, "-c:v", "hevc", scale_cmd, "-b:v", bitrate, "-c:a", "copy", transcoded_file])
 
         update_progress("Video conversion completed.")
     except ValueError as e:
