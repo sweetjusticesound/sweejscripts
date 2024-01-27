@@ -1,9 +1,7 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext
+from tkinter import filedialog, messagebox
 import subprocess
-import threading
 import os
-import queue
 
 def open_file_dialog():
     filename = filedialog.askopenfilename()
@@ -15,36 +13,22 @@ def open_directory_dialog():
     output_entry.delete(0, tk.END)
     output_entry.insert(0, directory)
 
-def update_progress(message):
-    progress_label.config(text=message)
-    app.update()
-
-def run_command(command, console_queue):
-    try:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, bufsize=1)
-        for line in iter(process.stdout.readline, ''):
-            console_queue.put(line)
-        for line in iter(process.stderr.readline, ''):
-            console_queue.put(line)
-        process.stdout.close()
-        process.stderr.close()
-        return process.wait()
-    except Exception as e:
-        console_queue.put(f"Exception: {str(e)}\n")
-
-def update_console(console_queue):
-    while not console_queue.empty():
-        line = console_queue.get()
-        console_output.insert(tk.END, line)
-        console_output.yview(tk.END)
-    app.after(100, lambda: update_console(console_queue))
-
 def open_audio_file_dialog():
     audio_filename = filedialog.askopenfilename()
     audio_entry.delete(0, tk.END)
     audio_entry.insert(0, audio_filename)
 
-def convert_videos(console_queue):
+def update_progress(message):
+    progress_label.config(text=message)
+    app.update()
+
+def run_command(command):
+    try:
+        subprocess.run(command)
+    except Exception as e:
+        messagebox.showerror("Error", f"An error occurred: {e}")
+
+def convert_videos():
     source = source_entry.get()
     audio_source = audio_entry.get()
     output_dir = output_entry.get()
@@ -52,8 +36,6 @@ def convert_videos(console_queue):
     min_br = min_bitrate_entry.get()
     max_br = max_bitrate_entry.get()
     step_br = step_bitrate_entry.get()
-
-    ffmpeg_threads = []  # List to keep track of FFmpeg threads
 
     try:
         min_br_int = int(min_br)
@@ -69,7 +51,6 @@ def convert_videos(console_queue):
             update_progress(f"Transcoding at bitrate: {bitrate}")
 
             scale_cmd = ["-vf", "scale=iw/2:ih/2"] if br < 15000 else []
-
             audio_cmd = ["-i", audio_source, "-c:a", "copy"] if audio_source else ["-c:a", "copy"]
             ffmpeg_command = [
                 "ffmpeg", "-i", source, 
@@ -80,18 +61,11 @@ def convert_videos(console_queue):
                 transcoded_file
             ]
 
-            ffmpeg_thread = threading.Thread(target=run_command, args=(ffmpeg_command, console_queue))
-            ffmpeg_threads.append(ffmpeg_thread)
-            ffmpeg_thread.start()
-
-        # Wait for all FFmpeg threads to complete
-        for thread in ffmpeg_threads:
-            thread.join()
+            run_command(ffmpeg_command)
 
         update_progress("Video conversion completed.")
     except ValueError as e:
         messagebox.showerror("Error", str(e))
-
 
 def extract_bitrate_from_filename(filename):
     try:
@@ -103,7 +77,7 @@ def extract_bitrate_from_filename(filename):
         messagebox.showerror("Error", f"Failed to extract bitrate from filename: {e}")
         return None
 
-def generate_m3u8(console_queue):
+def generate_m3u8():
     output_dir = output_entry.get()
     output_filename = output_filename_entry.get()
     segment_length = segment_length_entry.get()
@@ -129,45 +103,25 @@ def generate_m3u8(console_queue):
                     "--target-duration", str(segment_length_int),
                     "-f", segment_dir,
                     "-B", f"seg_{bitrate_bps}k",
-                    segment_file  # File at the end
+                    segment_file
                 ]
 
-                threading.Thread(target=run_command, args=(segmenter_command, console_queue)).start()
+                run_command(segmenter_command, console_output)
 
-        # Wait for all segmenter threads to finish (optional)
-        # for thread in segmenter_threads:
-        #     thread.join()
-
-        # Create master playlist
         master_playlist_path = f"{output_dir}/{output_filename}_master.m3u8"
         variant_creator_command = ["variantplaylistcreator", "-o", master_playlist_path] + variant_plists
-        threading.Thread(target=run_command, args=(variant_creator_command, console_queue)).start()
+        run_command(variant_creator_command, console_output)
 
         update_progress("Master M3U8 generation completed.")
     except Exception as e:
         messagebox.showerror("Error", f"An error occurred during M3U8 generation: {e}")
-
-
-def start_video_conversion_thread():
-    threading.Thread(target=convert_videos, daemon=True).start()
-
-def start_m3u8_generation_thread():
-    threading.Thread(target=generate_m3u8, daemon=True).start()
-
-def run_hls_conversion(console_queue):
-    convert_videos(console_queue)
-    generate_m3u8(console_queue)
-
-def start_conversion_thread():
-    console_queue = queue.Queue()
-    threading.Thread(target=run_hls_conversion, args=(console_queue,), daemon=True).start()
 
 # GUI setup
 app = tk.Tk()
 app.title("HLS Converter")
 
 # Grid layout configuration
-app.columnconfigure(1, weight=1)  # Allow the second column to expand
+app.columnconfigure(1, weight=1)
 
 # Audio File Selection
 tk.Label(app, text="Select Dolby Atmos MP4 File (optional, will use Source Video File's audio track if left blank):").grid(row=0, column=0, columnspan=2, sticky='w')
@@ -212,21 +166,13 @@ segment_length_entry = tk.Entry(app)
 segment_length_entry.insert(0, "10")  # Default segment length
 segment_length_entry.grid(row=15, column=0, sticky='ew')
 
-# Control Buttons
-tk.Button(app, text="Just Convert Videos", command=start_video_conversion_thread).grid(row=16, column=0, sticky='ew')
-tk.Button(app, text="Just Generate the M3U8", command=start_m3u8_generation_thread).grid(row=16, column=1, sticky='ew')
-tk.Button(app, text="Full Process", command=start_conversion_thread).grid(row=17, column=0, columnspan=2, sticky='ew')
-
 # Progress Label
 progress_label = tk.Label(app, text="")
 progress_label.grid(row=18, column=0, columnspan=2, sticky='w')
 
-# Console Output
-console_output = scrolledtext.ScrolledText(app, height=10)
-console_output.grid(row=19, column=0, columnspan=2, sticky='ew')
-
-# Periodic update call
-console_queue = queue.Queue()
-app.after(100, lambda: update_console(console_queue))
+# Control Buttons
+tk.Button(app, text="Just Convert Videos", command=convert_videos).grid(row=16, column=0, sticky='ew')
+tk.Button(app, text="Just Generate the M3U8", command=generate_m3u8).grid(row=16, column=1, sticky='ew')
+tk.Button(app, text="Full Process", command=lambda: [convert_videos(), generate_m3u8()]).grid(row=17, column=0, columnspan=2, sticky='ew')
 
 app.mainloop()
