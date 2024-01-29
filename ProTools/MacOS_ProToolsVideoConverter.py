@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox, Checkbutton, IntVar
+from tkinter import filedialog, messagebox
 import os
 import subprocess
 from datetime import datetime
@@ -30,24 +30,16 @@ def convert_videos():
                 '-c:v', 'libx264',
                 '-preset', preset,
                 '-crf', str(crf),
+                '-r', str(framerate),
                 '-c:a', 'aac',
                 '-b:a', '320k',
                 '-movflags', '+faststart',
                 output_file
             ]
 
-            if preserve_framerate.get() == 0:
-                cmd.extend(['-r', str(framerate)])
-
             subprocess.run(cmd)
 
     messagebox.showinfo("Conversion Complete", "All videos have been converted.")
-
-def toggle_framerate():
-    if preserve_framerate.get() == 1:
-        framerate_entry.config(state='disabled')
-    else:
-        framerate_entry.config(state='normal')
 
 # Creating the main window
 root = tk.Tk()
@@ -57,7 +49,6 @@ root.title("MP4 to MOV Converter")
 preset_var = tk.StringVar(value='fast')
 crf_var = tk.IntVar(value=23)
 framerate_var = tk.DoubleVar(value=30)
-preserve_framerate = tk.IntVar(value=0)
 
 # Widgets
 tk.Label(root, text="Preset:").pack()
@@ -71,9 +62,6 @@ crf_entry.pack()
 tk.Label(root, text="Frame Rate:").pack()
 framerate_entry = tk.Entry(root, textvariable=framerate_var)
 framerate_entry.pack()
-
-preserve_framerate_cb = Checkbutton(root, text="Preserve original frame rate", variable=preserve_framerate, command=toggle_framerate)
-preserve_framerate_cb.pack()
 
 convert_button = tk.Button(root, text="Convert Videos", command=convert_videos)
 convert_button.pack()
