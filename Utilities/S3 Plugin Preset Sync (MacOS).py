@@ -12,7 +12,7 @@ from botocore.exceptions import NoCredentialsError, ClientError
 logging.basicConfig(level=logging.DEBUG)
 
 
-class S3Zilla:
+class SweejS3Syncer:
     def __init__(self, root):
         self.root = root
         self.loading = False
@@ -30,7 +30,7 @@ class S3Zilla:
         self.populate_s3_tree()
 
     def setup_ui(self):
-        self.root.title("S3Zilla")
+        self.root.title("Sweej S3 Syncer")
         self.center_window(1000, 800, self.root)
 
         self.pane = ttk.Panedwindow(self.root, orient=tk.HORIZONTAL)
@@ -524,5 +524,5 @@ class S3Zilla:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = S3Zilla(root)
+    app = SweejS3Syncer(root)
     root.mainloop()
