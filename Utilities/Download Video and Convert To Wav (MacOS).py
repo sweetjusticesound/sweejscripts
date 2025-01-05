@@ -2,11 +2,13 @@ import os
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
+from tkinter import filedialog
 import subprocess
 import threading
 
 def download_and_convert():
     url = url_entry.get()
+    cookies_path = cookies_entry.get()
     format_choice = format_var.get()
     delete_original = delete_var.get()
     downloads_path = os.path.join(os.path.expanduser('~'), 'Downloads')
@@ -17,7 +19,15 @@ def download_and_convert():
 
     def run_download():
         try:
-            download_command = f'yt-dlp -o "{downloads_path}/%(title)s.%(ext)s" {url}'
+            # Construct the download command
+            download_command = f'yt-dlp -o "{downloads_path}/%(title)s.%(ext)s"'
+
+            # Add cookies file path if provided
+            if cookies_path:
+                download_command += f' --cookies "{cookies_path}"'
+
+            download_command += f' {url}'
+
             process = subprocess.Popen(download_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
             while True:
@@ -61,6 +71,12 @@ def download_and_convert():
 
     threading.Thread(target=run_download).start()
 
+def browse_cookies_file():
+    file_path = filedialog.askopenfilename(title="Select Cookies File", filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")])
+    if file_path:
+        cookies_entry.delete(0, tk.END)
+        cookies_entry.insert(0, file_path)
+
 # Set up the Tkinter window
 window = tk.Tk()
 window.title("SammyJ's WebVid Downloader and Converter")
@@ -70,6 +86,16 @@ url_label = ttk.Label(window, text="Video URL:")
 url_label.pack()
 url_entry = ttk.Entry(window, width=50)
 url_entry.pack()
+
+# Cookies file entry
+cookies_label = ttk.Label(window, text="Path to Cookies File (optional) use Chrome Extension 'get cookies TXT Locally'':")
+cookies_label.pack()
+cookies_frame = ttk.Frame(window)
+cookies_frame.pack()
+cookies_entry = ttk.Entry(cookies_frame, width=40)
+cookies_entry.pack(side=tk.LEFT)
+browse_button = ttk.Button(cookies_frame, text="Browse", command=browse_cookies_file)
+browse_button.pack(side=tk.LEFT)
 
 # Format dropdown
 format_label = ttk.Label(window, text="Select File Format:")
