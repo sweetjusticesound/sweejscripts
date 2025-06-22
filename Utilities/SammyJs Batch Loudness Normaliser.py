@@ -23,7 +23,7 @@ class LoudnessNormalizer:
     def __init__(self, root):
         self.root = root
         self.root.title("SammyJ Batch Loudness Normaliser")
-        self.root.geometry("1200x1000")
+        self.root.geometry("1200x1200")
         self.root.resizable(True, True)
         
         # Configure window style but keep close button functional
@@ -55,12 +55,23 @@ class LoudnessNormalizer:
         self.bit_depth = tk.IntVar(value=24)
         self.is_processing = False
         
+        # Limiter variables
+        self.use_limiter = tk.BooleanVar(value=False)
+        self.limiter_threshold = tk.DoubleVar(value=-1.0)
+        self.limiter_true_peak = tk.DoubleVar(value=-0.3)
+        self.limiter_makeup_gain = tk.DoubleVar(value=0.0)
+        
         # Trace folder path changes
         self.folder_path.trace_add('write', self.on_folder_path_change)
         
         # Trace parameter changes for dynamic instructions
         self.target_loudness.trace_add('write', self.update_instructions)
         self.true_peak.trace_add('write', self.update_instructions)
+        self.use_limiter.trace_add('write', self.on_limiter_toggle)
+        self.use_limiter.trace_add('write', self.update_instructions)
+        self.limiter_threshold.trace_add('write', self.update_instructions)
+        self.limiter_true_peak.trace_add('write', self.update_instructions)
+        self.limiter_makeup_gain.trace_add('write', self.update_instructions)
         
         # Supported formats
         self.audio_extensions = {'.wav', '.flac', '.aiff', '.aif', '.mp3', '.ogg', '.m4a'}
@@ -108,6 +119,10 @@ class LoudnessNormalizer:
                        troughcolor=self.colors['bg_light'], borderwidth=0, lightcolor=self.colors['accent'],
                        darkcolor=self.colors['accent'])
         
+        # Configure checkbox
+        style.configure('Dark.TCheckbutton', background=self.colors['bg_medium'], foreground=self.colors['text_primary'],
+                       font=('SF Pro Text', 11) if platform.system() == 'Darwin' else ('Segoe UI', 10))
+        
     def setup_ui(self):
         # Main container with dark background
         main_frame = ttk.Frame(self.root, style='Dark.TFrame', padding="20")
@@ -141,10 +156,12 @@ class LoudnessNormalizer:
         instructions_text = [
             "1. Select a source folder containing audio files (WAV, FLAC, MP3, etc.) or video files (MP4, MOV, MKV, etc.)",
             "2. Choose an output folder (defaults to source folder) - files will be saved with descriptive names",
-            "3. Set your target loudness (default -18 LKFS for streaming) and true peak limit",
-            "4. Configure sample rate and bit depth for output files",
-            "5. Click 'PROCESS FILES' to normalize all media files in the folder",
+            "3. OPTIONAL: Enable limiter for initial peak control (Step 1 in processing chain)",
+            "4. Set your target loudness and true peak limit for normalization (Step 2 in processing chain)",
+            "5. Configure sample rate and bit depth for output files",
+            "6. Click 'PROCESS FILES' to normalize all media files in the folder",
             "",
+            "Processing Order: Limiter → Loudness Normalization → True Peak Limiting",
             "• Audio files are processed directly",
             "• Video files have their audio extracted, normalized, and saved as separate audio files",
             "",
@@ -181,12 +198,48 @@ class LoudnessNormalizer:
         self.output_button = ttk.Button(folder_frame, text="Browse", command=self.select_output_folder, style='Accent.TButton', state='disabled')
         self.output_button.grid(row=1, column=2, pady=(10, 0))
         
-        # Parameters frame
+        # Limiter section (Step 1 in processing chain)
+        limiter_frame = ttk.Frame(main_frame, style='Medium.TFrame', padding="15")
+        limiter_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(0, 15))
+        
+        # Limiter title
+        limiter_title = ttk.Label(limiter_frame, text="Step 1: Limiter (Optional)", 
+                                 font=('SF Pro Text', 13, 'bold') if platform.system() == 'Darwin' else ('Segoe UI', 12, 'bold'), 
+                                 background=self.colors['bg_medium'], 
+                                 foreground=self.colors['text_primary'])
+        limiter_title.grid(row=0, column=0, columnspan=4, pady=(0, 10))
+        
+        # Limiter checkbox
+        self.limiter_check = ttk.Checkbutton(limiter_frame, text="Enable Limiter", 
+                                            variable=self.use_limiter,
+                                            style='Dark.TCheckbutton')
+        self.limiter_check.grid(row=1, column=0, sticky=tk.W, pady=(0, 10))
+        
+        # Limiter parameters
+        ttk.Label(limiter_frame, text="Limiter Threshold (dBFS):", style='Dark.TLabel').grid(row=2, column=0, sticky=tk.W, pady=5)
+        self.limiter_threshold_spin = ttk.Spinbox(limiter_frame, from_=-10, to=0, increment=0.1,
+                                                 textvariable=self.limiter_threshold, width=12, 
+                                                 style='Dark.TSpinbox', state='disabled')
+        self.limiter_threshold_spin.grid(row=2, column=1, sticky=tk.W, padx=(10, 30), pady=5)
+        
+        ttk.Label(limiter_frame, text="Limiter True Peak (dBFS):", style='Dark.TLabel').grid(row=2, column=2, sticky=tk.W, pady=5)
+        self.limiter_peak_spin = ttk.Spinbox(limiter_frame, from_=-3, to=0, increment=0.1,
+                                            textvariable=self.limiter_true_peak, width=12,
+                                            style='Dark.TSpinbox', state='disabled')
+        self.limiter_peak_spin.grid(row=2, column=3, sticky=tk.W, padx=10, pady=5)
+        
+        ttk.Label(limiter_frame, text="Makeup Gain (dB):", style='Dark.TLabel').grid(row=3, column=0, sticky=tk.W, pady=5)
+        self.makeup_gain_spin = ttk.Spinbox(limiter_frame, from_=-10, to=10, increment=0.1,
+                                           textvariable=self.limiter_makeup_gain, width=12,
+                                           style='Dark.TSpinbox', state='disabled')
+        self.makeup_gain_spin.grid(row=3, column=1, sticky=tk.W, padx=(10, 30), pady=5)
+        
+        # Parameters frame (Step 2 in processing chain)
         params_frame = ttk.Frame(main_frame, style='Medium.TFrame', padding="15")
-        params_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(0, 15))
+        params_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(0, 15))
         
         # Parameters title
-        param_title = ttk.Label(params_frame, text="Normalization Parameters", 
+        param_title = ttk.Label(params_frame, text="Step 2: Loudness Normalization", 
                                font=('SF Pro Text', 13, 'bold') if platform.system() == 'Darwin' else ('Segoe UI', 12, 'bold'), 
                                background=self.colors['bg_medium'], 
                                foreground=self.colors['text_primary'])
@@ -199,9 +252,9 @@ class LoudnessNormalizer:
         loudness_spin.grid(row=1, column=1, sticky=tk.W, padx=(10, 30), pady=5)
         
         ttk.Label(params_frame, text="True Peak (dBFS):", style='Dark.TLabel').grid(row=2, column=0, sticky=tk.W, pady=5)
-        peak_spin = ttk.Spinbox(params_frame, from_=-10, to=0, increment=0.1, 
+        self.peak_spin = ttk.Spinbox(params_frame, from_=-10, to=0, increment=0.1, 
                                textvariable=self.true_peak, width=12, style='Dark.TSpinbox')
-        peak_spin.grid(row=2, column=1, sticky=tk.W, padx=(10, 30), pady=5)
+        self.peak_spin.grid(row=2, column=1, sticky=tk.W, padx=(10, 30), pady=5)
         
         # Right side parameters
         ttk.Label(params_frame, text="Sample Rate:", style='Dark.TLabel').grid(row=1, column=2, sticky=tk.W, pady=5)
@@ -216,7 +269,7 @@ class LoudnessNormalizer:
         
         # Process button
         button_frame = ttk.Frame(main_frame, style='Dark.TFrame')
-        button_frame.grid(row=4, column=0, pady=(0, 15))
+        button_frame.grid(row=5, column=0, pady=(0, 15))
         
         self.process_btn = ttk.Button(button_frame, text="PROCESS FILES", command=self.start_processing, 
                                      style='Accent.TButton', width=20)
@@ -224,11 +277,11 @@ class LoudnessNormalizer:
         
         # Progress bar
         self.progress = ttk.Progressbar(main_frame, mode='indeterminate', style='Dark.Horizontal.TProgressbar')
-        self.progress.grid(row=5, column=0, sticky=(tk.W, tk.E), pady=(0, 15))
+        self.progress.grid(row=6, column=0, sticky=(tk.W, tk.E), pady=(0, 15))
         
         # Results section
         results_frame = ttk.Frame(main_frame, style='Medium.TFrame', padding="15")
-        results_frame.grid(row=6, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        results_frame.grid(row=7, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         results_frame.rowconfigure(1, weight=1)
         results_frame.columnconfigure(0, weight=1)
         
@@ -262,7 +315,7 @@ class LoudnessNormalizer:
         self.results_text.config(yscrollcommand=scrollbar.set)
         
         # Configure grid weights for expansion
-        main_frame.rowconfigure(6, weight=1)
+        main_frame.rowconfigure(7, weight=1)
         
     def select_folder(self):
         folder = filedialog.askdirectory()
@@ -288,17 +341,39 @@ class LoudnessNormalizer:
             self.output_path.set('')
             
     def update_instructions(self, *args):
-        # Update the output naming instruction (index 9)
-        if hasattr(self, 'instruction_labels') and len(self.instruction_labels) > 9:
+        # Update the output naming instruction (index 10)
+        if hasattr(self, 'instruction_labels') and len(self.instruction_labels) > 10:
             try:
                 loudness_str = f"{abs(int(self.target_loudness.get()))}lkfs"
-                peak_str = f"tp{abs(self.true_peak.get()):.1f}dbfs".replace('.', '_')
-                naming_text = f"Output naming: filename_normalized_{loudness_str}_{peak_str}_timestamp.ext"
-                self.instruction_labels[9].config(text=naming_text)
+                
+                if self.use_limiter.get():
+                    # Use limiter true peak value
+                    peak_str = f"tp{abs(self.limiter_true_peak.get()):.1f}dbfs".replace('.', '_')
+                    threshold_str = f"_lim{abs(self.limiter_threshold.get()):.1f}db".replace('.', '_')
+                    naming_text = f"Output naming: filename_normalized_{loudness_str}_{peak_str}{threshold_str}_timestamp.ext"
+                else:
+                    # Use regular true peak value
+                    peak_str = f"tp{abs(self.true_peak.get()):.1f}dbfs".replace('.', '_')
+                    naming_text = f"Output naming: filename_normalized_{loudness_str}_{peak_str}_timestamp.ext"
+                
+                self.instruction_labels[10].config(text=naming_text)
                 # Make it stand out
-                self.instruction_labels[9].config(foreground=self.colors['accent'])
+                self.instruction_labels[10].config(foreground=self.colors['accent'])
             except:
                 pass  # Handle initial setup when values aren't set yet
+                
+    def on_limiter_toggle(self, *args):
+        if self.use_limiter.get():
+            # Enable limiter controls, keep normalization true peak active
+            self.limiter_threshold_spin.config(state='normal')
+            self.limiter_peak_spin.config(state='normal')
+            self.makeup_gain_spin.config(state='normal')
+            # Both limiter and normalization true peak remain active
+        else:
+            # Disable limiter controls only
+            self.limiter_threshold_spin.config(state='disabled')
+            self.limiter_peak_spin.config(state='disabled')
+            self.makeup_gain_spin.config(state='disabled')
             
     def start_processing(self):
         if not self.folder_path.get():
@@ -396,12 +471,53 @@ class LoudnessNormalizer:
             original_loudness, original_peak = self.measure_loudness(audio, rate)
             self.log(f"  Original: {original_loudness:.1f} LKFS, Peak: {original_peak:.1f} dBFS")
             
-            # Normalize loudness
+            # Step 1: Apply limiter first (if enabled)
+            processed_audio = audio.copy()
+            if self.use_limiter.get():
+                self.log(f"  Applying limiter (threshold: {self.limiter_threshold.get():.1f} dBFS)")
+                threshold = 10 ** (self.limiter_threshold.get() / 20)
+                peak_limit = 10 ** (self.limiter_true_peak.get() / 20)
+                
+                # Simple soft-knee limiter
+                for i in range(len(processed_audio)):
+                    if len(processed_audio.shape) == 1:
+                        # Mono
+                        if abs(processed_audio[i]) > threshold:
+                            # Apply soft knee compression above threshold
+                            ratio = 10.0  # 10:1 ratio
+                            excess = abs(processed_audio[i]) - threshold
+                            compressed_excess = excess / ratio
+                            new_value = threshold + compressed_excess
+                            processed_audio[i] = new_value * np.sign(processed_audio[i])
+                    else:
+                        # Stereo/multichannel
+                        for ch in range(processed_audio.shape[1]):
+                            if abs(processed_audio[i, ch]) > threshold:
+                                excess = abs(processed_audio[i, ch]) - threshold
+                                compressed_excess = excess / ratio
+                                new_value = threshold + compressed_excess
+                                processed_audio[i, ch] = new_value * np.sign(processed_audio[i, ch])
+                
+                # Apply makeup gain
+                makeup_gain_linear = 10 ** (self.limiter_makeup_gain.get() / 20)
+                processed_audio = processed_audio * makeup_gain_linear
+                
+                # Apply limiter true peak limiting (after makeup gain)
+                max_peak = np.max(np.abs(processed_audio))
+                if max_peak > peak_limit:
+                    processed_audio = processed_audio * (peak_limit / max_peak)
+                
+                # Measure post-limiter levels
+                post_limiter_loudness, post_limiter_peak = self.measure_loudness(processed_audio, rate)
+                self.log(f"  Post-limiter: {post_limiter_loudness:.1f} LKFS, Peak: {post_limiter_peak:.1f} dBFS")
+            
+            # Step 2: Apply loudness normalization
             meter = pyln.Meter(rate)
-            normalized_audio = pyln.normalize.loudness(audio, original_loudness, 
+            current_loudness, _ = self.measure_loudness(processed_audio, rate)
+            normalized_audio = pyln.normalize.loudness(processed_audio, current_loudness, 
                                                       self.target_loudness.get())
             
-            # Apply true peak limiting if necessary
+            # Apply normalization true peak limiting
             peak_limit = 10 ** (self.true_peak.get() / 20)
             max_peak = np.max(np.abs(normalized_audio))
             if max_peak > peak_limit:
@@ -430,9 +546,14 @@ class LoudnessNormalizer:
             # Generate output filename with stats
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             loudness_str = f"{abs(int(self.target_loudness.get()))}lkfs"
-            peak_str = f"tp{abs(self.true_peak.get()):.1f}dbfs".replace('.', '_')
             
-            output_filename = f"{file_path.stem}_normalized_{loudness_str}_{peak_str}_{timestamp}{file_path.suffix}"
+            if self.use_limiter.get():
+                peak_str = f"tp{abs(self.limiter_true_peak.get()):.1f}dbfs".replace('.', '_')
+                threshold_str = f"_lim{abs(self.limiter_threshold.get()):.1f}db".replace('.', '_')
+                output_filename = f"{file_path.stem}_normalized_{loudness_str}_{peak_str}{threshold_str}_{timestamp}{file_path.suffix}"
+            else:
+                peak_str = f"tp{abs(self.true_peak.get()):.1f}dbfs".replace('.', '_')
+                output_filename = f"{file_path.stem}_normalized_{loudness_str}_{peak_str}_{timestamp}{file_path.suffix}"
             
             # Determine output directory
             output_dir = Path(self.output_path.get()) if self.output_path.get() else file_path.parent
